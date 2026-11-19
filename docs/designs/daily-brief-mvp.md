@@ -18,7 +18,7 @@
 
 ## 구현 방향
 
-**선택한 방식은 단일 앱, 관계형 DB, 예약 배치다.** 앱이 구독 화면과 배치 진입점을 제공한다. 배치는 소스를 수집해 공통 항목으로 저장하고, 릴리스 노트를 요약한 다음, 수신 설정에 맞춰 메일을 생성하고 발송한다. 별도 계정과 발송 워커를 두는 방식은 운영 구성 요소가 늘어 첫 버전에서 보류했다.
+**선택한 방식은 단일 Spring Boot 앱, Spring Batch, PostgreSQL이다.** 앱이 구독 화면과 배치 진입점을 제공한다. Spring Batch의 일일 Job이 소스 수집, 릴리스 요약, 메일 생성·발송을 Step으로 실행한다. 별도의 재시도 Job은 기존 발송 기록을 처리하며, 두 Job은 같은 앱에서 실행한다. PostgreSQL에 서비스 데이터와 Spring Batch JobRepository를 저장한다. [Spring Boot의 Spring Batch 지원](https://docs.spring.io/spring-boot/reference/io/spring-batch.html)
 
 - **수집 및 정렬.** Hacker News 공식 API의 상위 목록에서 발송 구간 안에 등록됐고 외부 URL이 있는 글을 순위대로 고른다. GeekNews 공식 Atom 피드는 발송 구간 안의 최신 토픽 순으로 고른다. 뉴스는 확인된 원문 URL이 같으면 Hacker News를 남기고 GeekNews는 다음 후보로 채운다. GeekNews에 원문 URL이 없으면 토픽 URL을 식별에 사용하므로 두 출처에서 같은 기사가 나올 수 있다. GitHub Releases API는 `draft`와 `prerelease`가 모두 거짓인 공개 릴리스만 받는다. `published_at`으로 수집 구간을 판정한다. [Hacker News API](https://github.com/HackerNews/API) · [GeekNews 피드](https://news.hada.io/blog/geeknews_feed) · [GitHub Releases API](https://docs.github.com/en/rest/releases/releases#list-releases)
 - **공통 데이터.** 항목에는 유형, 출처, 출처 ID, 표시 제목, 링크, 출처 시각이 있다. 릴리스에만 프로젝트, 버전, 요약을 추가한다. 출처와 출처 ID의 조합으로 재수집을 중복 없이 처리한다. 구독자와 프로젝트 선택, 출처별 처리 기록, 발송 기록은 별도로 저장한다.
