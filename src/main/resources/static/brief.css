@@ -1,0 +1,122 @@
+:root {
+  color-scheme: light;
+  --ink: #152e2d;
+  --muted: #425b59;
+  --page: #f6f8f6;
+  --accent: #075e59;
+  --visited: #55426e;
+  --border: #758a88;
+  --error: #a21d28;
+  --focus: #925d00;
+
+  font-family: "Noto Sans KR", "Malgun Gothic", sans-serif;
+  color: var(--ink);
+  background: var(--page);
+  line-height: 1.6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: clamp(1rem, 5vw, 2rem) 1rem;
+}
+
+main {
+  max-width: 36rem;
+  margin-inline: auto;
+  padding: clamp(1.25rem, 5vw, 2.5rem);
+  border-radius: 0.75rem;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+h1 {
+  margin-top: 0;
+  line-height: 1.2;
+}
+
+fieldset {
+  min-inline-size: 0;
+  border: 0;
+  padding: 0;
+  margin: 1.5rem 0;
+}
+
+legend {
+  margin-bottom: 0.5rem;
+  padding: 0;
+  font-weight: 700;
+}
+
+label {
+  display: block;
+  margin: 0.45rem 0;
+}
+
+fieldset label {
+  min-block-size: 44px;
+  padding-block: 0.45rem;
+  cursor: pointer;
+}
+
+label span {
+  color: var(--muted);
+}
+
+input[type="email"] {
+  width: 100%;
+  min-block-size: 44px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  font: inherit;
+}
+
+input[type="checkbox"] {
+  margin-inline: 0 0.25rem;
+  accent-color: var(--accent);
+}
+
+button {
+  min-block-size: 44px;
+  margin-top: 1rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.3rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #fff;
+  color: var(--accent);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+a:visited {
+  color: var(--visited);
+}
+
+.error {
+  color: var(--error);
+}
+
+.notice {
+  padding: 0.75rem;
+  background: #e5f3ef;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}

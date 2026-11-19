@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Daily Brief 링크</title>
+    <link rel="stylesheet" href="/brief.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Daily Brief</h1>
+      <div th:if="${valid}">
+        <p
+          th:text="${purpose == 'confirm' ? '구독을 확인하려면 버튼을 눌러 주세요.' : '구독 설정을 열려면 버튼을 눌러 주세요.'}"
+        ></p>
+        <form
+          method="post"
+          th:action="@{/subscription/{purpose}/{token}(purpose=${purpose},token=${token})}"
+        >
+          <button
+            th:text="${purpose == 'confirm' ? '구독 확인' : '설정 열기'}"
+          ></button>
+        </form>
+      </div>
+      <div th:unless="${valid}">
+        <p>
+          링크가 만료되었거나 사용할 수 없습니다. 이메일 주소를 입력해 새 링크를
+          요청해 주세요.
+        </p>
+        <p
+          class="notice"
+          th:if="${receipt}"
+          th:text="${receipt}"
+          role="status"
+        ></p>
+        <form
+          method="post"
+          th:action="@{/subscription/{purpose}/{token}/renew(purpose=${purpose},token=${token})}"
+        >
+          <label for="email">이메일</label>
+          <input
+            id="email"
+            type="email"
+            name="email"
+            autocomplete="email"
+            maxlength="254"
+            th:value="${email}"
+            th:attr="aria-describedby=${emailError != null ? 'email-error' : null}, aria-invalid=${emailError != null ? 'true' : null}"
+            required
+          />
+          <p
+            class="error"
+            id="email-error"
+            th:if="${emailError}"
+            th:text="${emailError}"
+            role="alert"
+          ></p>
+          <button>링크 다시 요청</button>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

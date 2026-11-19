@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>구독 완료</title>
+    <link rel="stylesheet" href="/brief.css" />
+  </head>
+  <body>
+    <main>
+      <h1>구독이 완료되었습니다.</h1>
+      <p>받으실 메일</p>
+      <ul>
+        <li th:each="subject : ${subjects}" th:text="${subject}"></li>
+      </ul>
+      <a href="/">처음으로</a>
+    </main>
+  </body>
+</html>

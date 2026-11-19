@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>관리 링크 요청</title>
+    <link rel="stylesheet" href="/brief.css" />
+  </head>
+  <body>
+    <main>
+      <h1>구독 관리</h1>
+      <p>이메일로 관리 링크를 보내드립니다.</p>
+      <p
+        class="notice"
+        th:if="${receipt}"
+        th:text="${receipt}"
+        role="status"
+      ></p>
+      <form method="post" th:action="@{/subscription/request-management}">
+        <label for="email">이메일</label>
+        <input
+          id="email"
+          type="email"
+          name="email"
+          autocomplete="email"
+          maxlength="254"
+          th:value="${email}"
+          th:attr="aria-describedby=${emailError != null ? 'email-error' : null}, aria-invalid=${emailError != null ? 'true' : null}"
+          required
+        />
+        <p
+          class="error"
+          id="email-error"
+          th:if="${emailError}"
+          th:text="${emailError}"
+          role="alert"
+        ></p>
+        <button>관리 링크 요청</button>
+      </form>
+    </main>
+  </body>
+</html>

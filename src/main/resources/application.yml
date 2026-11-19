@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: daily-brief
+  datasource:
+    url: ${DAILYBRIEF_DB_URL:jdbc:postgresql://localhost:5432/dailybrief}
+    username: ${DAILYBRIEF_DB_USER:dailybrief}
+    password: ${DAILYBRIEF_DB_PASSWORD:dailybrief}
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: never
+  task:
+    scheduling:
+      pool:
+        size: 2
+server:
+  servlet:
+    session:
+      timeout: 20m
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${DAILYBRIEF_SECURE_COOKIES:false}
+  error:
+    include-message: never
+    include-stacktrace: never
+dailybrief:
+  public-base-url: ${DAILYBRIEF_PUBLIC_BASE_URL:http://localhost:8080}
+  scheduling:
+    enabled: ${DAILYBRIEF_SCHEDULING_ENABLED:false}
+    activation-at: ${DAILYBRIEF_SCHEDULING_ACTIVATION_AT:}
+    retry-delay: ${DAILYBRIEF_RETRY_DELAY:PT1M}

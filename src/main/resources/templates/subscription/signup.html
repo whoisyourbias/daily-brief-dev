@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Daily Brief 구독</title>
+    <link rel="stylesheet" href="/brief.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Daily Brief</h1>
+      <p>오늘의 기술 뉴스와 내 기술 업데이트를 메일로 받아보세요.</p>
+      <p
+        class="notice"
+        th:if="${receipt}"
+        th:text="${receipt}"
+        role="status"
+      ></p>
+      <form method="post" th:action="@{/subscription}">
+        <fieldset
+          th:attr="aria-describedby=${mailError != null ? 'mail-error' : null}"
+        >
+          <legend>받을 메일</legend>
+          <label>
+            <input
+              type="checkbox"
+              name="news"
+              value="true"
+              th:checked="${news}"
+            />
+            Daily Brief · 오늘의 뉴스
+            <span>주요 기술 뉴스의 제목과 링크</span>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              name="technology"
+              value="true"
+              th:checked="${technology}"
+            />
+            Daily Brief · 내 기술 업데이트
+            <span>선택한 프로젝트의 새 정식 릴리스</span>
+          </label>
+          <p
+            class="error"
+            id="mail-error"
+            th:if="${mailError}"
+            th:text="${mailError}"
+            role="alert"
+          ></p>
+        </fieldset>
+        <fieldset
+          th:attr="aria-describedby=${projectError != null ? 'project-error' : null}"
+        >
+          <legend>프로젝트</legend>
+          <label th:each="p : ${projects}">
+            <input
+              type="checkbox"
+              name="projects"
+              th:value="${p.name()}"
+              th:checked="${selected != null and selected.contains(p.name())}"
+            />
+            <span th:text="${p.displayName()}"></span>
+          </label>
+          <p
+            class="error"
+            id="project-error"
+            th:if="${projectError}"
+            th:text="${projectError}"
+            role="alert"
+          ></p>
+        </fieldset>
+        <label for="email">이메일</label>
+        <input
+          id="email"
+          type="email"
+          name="email"
+          autocomplete="email"
+          maxlength="254"
+          th:value="${email}"
+          th:attr="aria-describedby=${emailError != null ? 'email-error' : null}, aria-invalid=${emailError != null ? 'true' : null}"
+          required
+        />
+        <p
+          class="error"
+          id="email-error"
+          th:if="${emailError}"
+          th:text="${emailError}"
+          role="alert"
+        ></p>
+        <button type="submit">확인 메일 요청</button>
+      </form>
+      <p><a href="/subscription/request-management">구독 관리 링크 받기</a></p>
+    </main>
+  </body>
+</html>

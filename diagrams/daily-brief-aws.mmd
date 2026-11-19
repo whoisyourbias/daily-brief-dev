@@ -1,0 +1,52 @@
+---
+title: Daily Brief AWS 인프라 구성안 · 서울 리전 · Terraform
+config:
+  theme: base
+  themeVariables:
+    fontFamily: 'Malgun Gothic, Noto Sans KR, sans-serif'
+    fontSize: '17px'
+    background: '#ffffff'
+    primaryTextColor: '#102033'
+    lineColor: '#536881'
+    edgeLabelBackground: '#ffffff'
+---
+graph LR
+    reader["구독자<br/>브라우저"]
+    sources["GitHub Releases<br/>Hacker News · GeekNews"]
+    llm["OpenAI<br/>릴리스 요약"]
+    inbox["구독자 메일함"]
+
+    api["API Gateway<br/>HTTP API"]
+    web["AWS Lambda<br/>Spring Boot 웹<br/>Lambda Web Adapter"]
+    scheduler["EventBridge Scheduler<br/>매일 08:00 KST"]
+    batch["ECS Fargate RunTask<br/>일일 작업 · 완료 후 태스크 0"]
+    db[("Aurora DSQL<br/>구독 · 수집 · 발송 상태")]
+    ses["Amazon SES<br/>확인 · 관리 · 브리프 메일"]
+
+    prep["Step Functions + Lambda<br/>수집 · 요약 · 발송 준비"]
+    queue["Amazon SQS<br/>발송 ID · DLQ"]
+    send["AWS Lambda<br/>발송 워커"]
+
+    reader -->|구독 · 확인 · 관리| api --> web
+    web --> db
+    web -->|확인 · 관리 링크| ses --> inbox
+    scheduler -->|정규 마감 전달| batch
+    batch -->|뉴스 · 릴리스 수집| sources
+    batch -->|선택적 요약| llm
+    batch -->|수집 · 발송 상태 기록| db
+    batch --> ses
+    scheduler -.->|후속 배치 전환| prep
+    prep -.->|발송 레코드 저장| db
+    prep -.->|커밋 후 발송 ID 게시| queue
+    queue -.-> send
+    send -.->|발송 상태 확인 · 갱신| db
+    send -.-> ses
+
+    classDef webTier fill:#eaf4ff,stroke:#4674a9,color:#102033;
+    classDef batchTier fill:#edf7f2,stroke:#51816c,color:#14352a;
+    classDef mailTier fill:#fff3dc,stroke:#ae7636,color:#382609;
+    classDef later fill:#f2edfa,stroke:#8269a4,color:#2d2049,stroke-dasharray:4 3;
+    class api,web,db webTier;
+    class scheduler,batch batchTier;
+    class ses,inbox mailTier;
+    class prep,queue,send later;

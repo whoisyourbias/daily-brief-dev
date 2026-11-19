@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>구독 설정</title>
+    <link rel="stylesheet" href="/brief.css" />
+  </head>
+  <body>
+    <main>
+      <h1>구독 설정</h1>
+      <p th:if="${saved}" role="status">설정을 저장했습니다.</p>
+      <form method="post" th:action="@{/subscription/settings}">
+        <fieldset>
+          <legend>받을 메일</legend>
+          <label>
+            <input
+              type="checkbox"
+              name="news"
+              value="true"
+              th:checked="${news}"
+            />
+            Daily Brief · 오늘의 뉴스
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              name="technology"
+              value="true"
+              th:checked="${technology}"
+            />
+            Daily Brief · 내 기술 업데이트
+          </label>
+        </fieldset>
+        <fieldset
+          th:attr="aria-describedby=${projectError != null ? 'project-error' : null}"
+        >
+          <legend>프로젝트</legend>
+          <label th:each="p : ${projects}">
+            <input
+              type="checkbox"
+              name="projects"
+              th:value="${p.name()}"
+              th:checked="${selected != null and selected.contains(p.name())}"
+            />
+            <span th:text="${p.displayName()}"></span>
+          </label>
+          <p
+            class="error"
+            id="project-error"
+            th:if="${projectError}"
+            th:text="${projectError}"
+            role="alert"
+          ></p>
+        </fieldset>
+        <button>설정 저장</button>
+      </form>
+      <form method="post" th:action="@{/subscription/unsubscribe}">
+        <button class="secondary">구독 해지</button>
+      </form>
+    </main>
+  </body>
+</html>
