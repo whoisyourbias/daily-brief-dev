@@ -1,6 +1,6 @@
 # 웹 Lambda 관리 세션과 요청 IP
 
-[Daily Brief AWS 전환 설계](daily-brief-aws.md)에서 채택한 구독 관리 세션 방식과 요청 IP 처리 제안을 정리한다.
+[Daily Brief AWS 전환 설계](daily-brief-aws.md)의 구독 관리 세션과 요청 IP 구현을 정리한다.
 
 ## 세션
 
@@ -8,7 +8,7 @@
 
 서명된 JWT의 고정 만료 시각만으로는 15분 유휴 만료와 이전 세션의 즉시 무효화를 함께 적용할 수 없다. 두 동작에 필요한 상태를 DSQL의 세션 행에서 관리한다.
 
-- 기존 관리 세션의 15분 유휴 만료를 유지한다. 만료 검사는 요청마다 수행하고, 배치로 만료 행을 정리한다. 활동 시각 갱신은 유효한 행에만 적용하며 이전 요청이 만료를 앞당기거나 무효화된 세션을 되살릴 수 없게 한다.
+- 관리 요청마다 15분 유휴 만료를 확인한다. 관리 링크 사용에 성공하면 별도 DB 작업으로 만료된 세션을 최대 100개 정리한다. 활동 시각 갱신은 유효한 행에만 적용하며 이전 요청이 만료를 앞당기거나 무효화된 세션을 되살릴 수 없게 한다.
 - 세션 쿠키에 `Secure`, `HttpOnly`, `SameSite=Lax`를 적용한다. 설정 변경과 해지에는 기존 관리 세대 검사와 CSRF 검증을 적용한다. DSQL 조회에 실패하면 관리 작업을 중단하고 다시 시도할 수 있는 오류를 반환한다.
 
 ## 요청 IP
@@ -18,3 +18,13 @@
 ## AWS 통합 검증
 
 서로 다른 Lambda 실행 환경에서 관리 링크 소비, 설정 조회, 저장이 이어지는지 확인한다. 유휴 만료, 세션 교체, 관리 세대 불일치, CSRF 실패, DSQL 장애 시 동작을 확인한다. IPv4와 IPv6에서 전달 헤더 값이 달라도 API Gateway가 기록한 주소로 기존 메일 요청 제한이 적용되는지 확인한다.
+
+## 웹 Lambda 실행 설정
+
+```sh
+docker build -f Dockerfile.web-lambda -t daily-brief-web-lambda .
+```
+
+API Gateway HTTP API의 Lambda 프록시 통합은 페이로드 버전 `2.0`으로 설정한다. Lambda 실행 역할에는 해당 Aurora DSQL 클러스터의 `dsql:DbConnect`를 부여하고, 대응하는 DB 역할에는 구독과 세션 테이블을 처리하는 데 필요한 권한을 부여한다. `DAILYBRIEF_DB_URL`에 `jdbc:aws-dsql:postgresql://<endpoint>/postgres`, `DAILYBRIEF_DB_USER`에 DB 역할, `DAILYBRIEF_PUBLIC_BASE_URL`에 사용자에게 공개할 HTTPS 주소를 지정한다. [Aurora DSQL JDBC 커넥터](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/SECTION_program-with-jdbc-connector.html)
+
+웹 Lambda가 시작하기 전에 V2 구독 스키마와 V5 세션 스키마를 적용한다. DSQL에서는 한 트랜잭션에 DDL 한 문장을 적용한다. V2의 ID 생성에는 `CACHE 65536`을 명시하고, V5의 만료 인덱스는 `CREATE INDEX ASYNC`로 생성한 후 완료를 확인한다. [DSQL 전환 검증](daily-brief-aws.md#dsql-전환-검증)

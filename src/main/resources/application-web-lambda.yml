@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    driver-class-name: ${DAILYBRIEF_DB_DRIVER:software.amazon.dsql.jdbc.DSQLConnector}
+  flyway:
+    enabled: false
+dailybrief:
+  scheduling:
+    enabled: false
+server:
+  forward-headers-strategy: none
+  servlet:
+    session:
+      cookie:
+        secure: true

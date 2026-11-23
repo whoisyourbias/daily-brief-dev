@@ -41,8 +41,7 @@ public class SubscriptionService {
 
     public record Confirmation(boolean news, boolean technology) {}
 
-    public record ManagementSession(long subscriberId, long generation)
-            implements java.io.Serializable {}
+    private record ManagementSession(long subscriberId, long generation) {}
 
     private Instant now() {
         return clock.instant();
@@ -187,16 +186,19 @@ public class SubscriptionService {
         }
     }
 
-    public Preferences preferences(long id, long generation) {
-        Subscriber s = byId(id, false);
-        if (s == null || !s.status().equals("ACTIVE") || s.generation() != generation) return null;
+    @Transactional
+    public Preferences preferences(String sessionToken) {
+        ManagementSession access = touchSession(sessionToken);
+        if (access == null) return null;
+        Subscriber s = byId(access.subscriberId(), false);
+        if (!active(s, access.generation())) return null;
         Set<BriefProject> p = EnumSet.noneOf(BriefProject.class);
         db.query(
                 "SELECT project FROM brief_project_selection WHERE subscriber_id=?",
                 rs -> {
                     p.add(BriefProject.valueOf(rs.getString(1)));
                 },
-                id);
+                s.id());
         return new Preferences(s.news(), s.technology(), p);
     }
 
@@ -320,38 +322,98 @@ public class SubscriptionService {
     }
 
     @Transactional
-    public ManagementSession openManagement(String raw) {
+    public String openManagement(String raw, String previousSession) {
         Token t = valid(raw, "MANAGE", true);
         if (t == null) return null;
+        if (validSessionToken(previousSession)) {
+            db.queryForList(
+                    "SELECT digest FROM brief_management_session WHERE digest=? FOR UPDATE",
+                    String.class, digest(previousSession));
+        }
         Subscriber s = byId(t.subscriberId(), true);
-        if (s == null || !s.status().equals("ACTIVE") || s.generation() != t.generation())
-            return null;
+        if (!active(s, t.generation())) return null;
         db.update(
                 "UPDATE brief_subscription_token SET consumed_at=? WHERE digest=?",
                 timestamp(now()),
                 digest(raw));
-        return new ManagementSession(s.id(), s.generation());
+        deleteSession(previousSession);
+        String sessionToken = token();
+        db.update(
+                "INSERT INTO brief_management_session"
+                    + " (digest,subscriber_id,generation,csrf_token,expires_at) VALUES (?,?,?,?,?)",
+                digest(sessionToken), s.id(), s.generation(), token(), timestamp(now().plusSeconds(900)));
+        return sessionToken;
+    }
+
+    String csrfToken(String sessionToken) {
+        if (!validSessionToken(sessionToken)) return null;
+        return db.query(
+                        "SELECT csrf_token FROM brief_management_session WHERE digest=?",
+                        (rs, row) -> rs.getString(1), digest(sessionToken))
+                .stream().findFirst().orElse(null);
+    }
+
+    private ManagementSession touchSession(String sessionToken) {
+        if (!validSessionToken(sessionToken)) return null;
+        Instant time = now();
+        return db.query(
+                        "UPDATE brief_management_session SET expires_at=GREATEST(expires_at,?)"
+                            + " WHERE digest=? AND expires_at>? AND EXISTS ("
+                            + " SELECT 1 FROM brief_subscriber s WHERE s.id=brief_management_session.subscriber_id"
+                            + " AND s.status='ACTIVE' AND s.generation=brief_management_session.generation)"
+                            + " RETURNING subscriber_id,generation",
+                        (rs, row) -> new ManagementSession(rs.getLong(1), rs.getLong(2)),
+                        timestamp(time.plusSeconds(900)), digest(sessionToken), timestamp(time))
+                .stream().findFirst().orElse(null);
+    }
+
+    private static boolean active(Subscriber subscriber, long generation) {
+        return subscriber != null && subscriber.status().equals("ACTIVE")
+                && subscriber.generation() == generation;
+    }
+
+    private static boolean validSessionToken(String sessionToken) {
+        return sessionToken != null && sessionToken.matches("[A-Za-z0-9_-]{43}");
+    }
+
+    private void deleteSession(String sessionToken) {
+        if (validSessionToken(sessionToken)) {
+            db.update("DELETE FROM brief_management_session WHERE digest=?", digest(sessionToken));
+        }
+    }
+
+    public void cleanExpiredSessions() {
+        db.update(
+                "DELETE FROM brief_management_session WHERE digest IN"
+                    + " (SELECT digest FROM brief_management_session WHERE expires_at<=?"
+                    + " ORDER BY expires_at LIMIT 100)",
+                timestamp(now()));
     }
 
     @Transactional
-    public boolean save(long id, long generation, Preferences p) {
-        Subscriber s = byId(id, true);
-        if (s == null || !s.status().equals("ACTIVE") || s.generation() != generation) return false;
+    public boolean save(String sessionToken, Preferences p) {
+        ManagementSession access = touchSession(sessionToken);
+        if (access == null) return false;
+        Subscriber s = byId(access.subscriberId(), true);
+        if (!active(s, access.generation())) return false;
         db.update(
                 "UPDATE brief_subscriber SET news_enabled=?,technology_enabled=? WHERE id=?",
                 p.news(),
                 p.technology(),
-                id);
-        selections(id, p.projects());
+                s.id());
+        selections(s.id(), p.projects());
         return true;
     }
 
     @Transactional
-    public void unsubscribe(long id, long generation) {
+    public void unsubscribe(String sessionToken) {
+        ManagementSession access = touchSession(sessionToken);
+        if (access == null) return;
         db.update(
                 "UPDATE brief_subscriber SET status='UNSUBSCRIBED',generation=generation+1 WHERE"
                     + " id=? AND generation=? AND status='ACTIVE'",
-                id,
-                generation);
+                access.subscriberId(),
+                access.generation());
+        deleteSession(sessionToken);
     }
 }

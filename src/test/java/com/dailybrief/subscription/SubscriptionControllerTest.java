@@ -5,15 +5,18 @@ import static org.mockito.Mockito.*;
 
 import com.dailybrief.common.MailKind;
 
+import jakarta.servlet.http.Cookie;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.ui.ExtendedModelMap;
 
 import java.util.List;
 
 class SubscriptionControllerTest {
     SubscriptionService service = mock(SubscriptionService.class);
-    SubscriptionController controller = new SubscriptionController(service);
+    SubscriptionController controller = new SubscriptionController(service, new ManagementCookie(false));
     MockHttpServletRequest request = new MockHttpServletRequest();
 
     @Test
@@ -38,25 +41,24 @@ class SubscriptionControllerTest {
         var model = new ExtendedModelMap();
         controller.signup("reader@example.com", true, true, List.of(), request, model);
         assertThat(model.get("projectError")).isNotNull();
-        request.getSession()
-                .setAttribute(
-                        "subscriberAccess", new SubscriptionService.ManagementSession(42L, 3L));
+        request.setCookies(new Cookie("brief-management", "session"));
+        when(service.preferences("session"))
+                .thenReturn(new SubscriptionService.Preferences(true, false, java.util.Set.of()));
         var manage = new ExtendedModelMap();
         controller.save(false, true, List.of(), request, manage);
         assertThat(manage.get("projectError")).isNotNull();
-        verifyNoInteractions(service);
+        verify(service).preferences("session");
+        verifyNoMoreInteractions(service);
     }
 
     @Test
     void manageAllowsBothMailsDisabled() {
-        request.getSession()
-                .setAttribute(
-                        "subscriberAccess", new SubscriptionService.ManagementSession(42L, 3L));
-        when(service.save(eq(42L), eq(3L), any())).thenReturn(true);
+        request.setCookies(new Cookie("brief-management", "session"));
+        when(service.save(eq("session"), any())).thenReturn(true);
         var model = new ExtendedModelMap();
         controller.save(false, false, List.of(), request, model);
         assertThat(model.get("saved")).isEqualTo(true);
-        verify(service).save(eq(42L), eq(3L), any());
+        verify(service).save(eq("session"), any());
     }
 
     @Test
@@ -74,11 +76,12 @@ class SubscriptionControllerTest {
         when(service.confirm("valid"))
                 .thenReturn(new SubscriptionService.Confirmation(true, false));
         var model = new ExtendedModelMap();
-        assertThat(controller.consume("confirm", "valid", request, model))
+        var response = new MockHttpServletResponse();
+        assertThat(controller.consume("confirm", "valid", request, response, model))
                 .isEqualTo("subscription/confirmed");
         assertThat(model.get("subjects")).isEqualTo(List.of(MailKind.NEWS.subject()));
         var failed = new ExtendedModelMap();
-        assertThat(controller.consume("confirm", "old", request, failed))
+        assertThat(controller.consume("confirm", "old", request, response, failed))
                 .isEqualTo("subscription/link");
         assertThat(failed.containsAttribute("subjects")).isFalse();
     }

@@ -87,11 +87,34 @@ def check(host, env):
         expect(a, "INSERT INTO brief_subscriber(email,status) VALUES ('test@example.invalid','ACTIVE') "
                "RETURNING (id > 0)", "t")
         a("INSERT INTO brief_project_selection VALUES (-1,'REACT',now())", "23503")
-        print("PASS: V2–V4 DDL with explicit identity cache and async indexes; orphan rejected", flush=True)
+        print("PASS: V2–V5 DDL with explicit identity cache and async indexes; orphan rejected", flush=True)
 
         a("CREATE TABLE cutoff_claim (id integer PRIMARY KEY, owner integer)")
         a("INSERT INTO cutoff_claim VALUES (1,NULL)")
         b(f"SET search_path TO {schema}")
+        a("INSERT INTO brief_management_session SELECT 'first',id,0,'csrf',"
+          "'2026-01-01 00:15:00+00' FROM brief_subscriber")
+        touch = ("UPDATE brief_management_session SET expires_at=GREATEST(expires_at,"
+                 "'2026-01-01 00:29:00+00') WHERE digest='first'"
+                 " AND expires_at>'2026-01-01 00:14:00+00' AND EXISTS ("
+                 " SELECT 1 FROM brief_subscriber s WHERE s.id=brief_management_session.subscriber_id"
+                 " AND s.status='ACTIVE' AND s.generation=brief_management_session.generation)"
+                 " RETURNING generation")
+        expect(b, "SELECT csrf_token FROM brief_management_session WHERE digest='first'", "csrf")
+        a("BEGIN")
+        b("BEGIN")
+        expect(b, touch, "0")
+        a("DELETE FROM brief_management_session WHERE digest='first'")
+        a("INSERT INTO brief_management_session SELECT 'second',id,0,'new-csrf',"
+          "'2026-01-01 00:30:00+00' FROM brief_subscriber")
+        a("COMMIT")
+        expect_conflict(b)
+        expect(b, touch)
+        expect(b, "DELETE FROM brief_management_session WHERE digest IN"
+               " (SELECT digest FROM brief_management_session WHERE expires_at<="
+               "'2026-01-01 00:30:00+00' ORDER BY expires_at LIMIT 100) RETURNING digest", "second")
+        print("PASS: shared management session, replacement conflict, and bounded expiration cleanup", flush=True)
+
         claim = "UPDATE cutoff_claim SET owner={} WHERE id=1 AND owner IS NULL RETURNING owner"
         a("BEGIN")
         b("BEGIN")
