@@ -13,11 +13,13 @@ import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import java.time.Instant;
 import java.util.function.Consumer;
 
 @Configuration(proxyBeanMethods = false)
+@Profile("!web-lambda")
 class BriefJobs {
 
     static final String CUTOFF = "cutoff";

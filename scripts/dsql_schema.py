@@ -1,4 +1,4 @@
-"""Initialize the Daily Brief V2–V4 application schema on Aurora DSQL."""
+"""Initialize the Daily Brief V2–V5 application schema on Aurora DSQL."""
 
 import argparse
 from contextlib import contextmanager
@@ -12,7 +12,9 @@ from threading import Thread
 
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "src/main/resources/db/migration"
-VERSIONS = ("V2__subscriptions.sql", "V3__collection.sql", "V4__delivery.sql")
+VERSIONS = (
+    "V2__subscriptions.sql", "V3__collection.sql", "V4__delivery.sql", "V5__management_sessions.sql",
+)
 INDEX_WAIT_TIMEOUT = 120
 
 
@@ -72,7 +74,7 @@ def schema_name(value):
 
 
 def migration_statements():
-    # V2–V4 contain only plain CREATE statements. Reject SQL that needs a real parser.
+    # These migrations contain only plain CREATE statements. Reject SQL that needs a real parser.
     statements = []
     for filename in VERSIONS:
         source = (MIGRATIONS / filename).read_text(encoding="utf-8")
@@ -146,7 +148,7 @@ def migrate(run, schema):
             build_index(run, schema, index, table, sql)
         else:
             run(sql)
-    print(f"Initialized V2–V4 in {schema}", flush=True)
+    print(f"Initialized V2–V5 in {schema}", flush=True)
 
 
 def add_connection_arguments(parser):

@@ -4,26 +4,56 @@ import com.dailybrief.common.BriefProject;
 import com.dailybrief.common.MailKind;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.TransactionException;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
+import java.sql.SQLException;
 import java.util.*;
+import java.util.function.Supplier;
 
 @Controller
 public class SubscriptionController {
+    private static final Logger LOG = LoggerFactory.getLogger(SubscriptionController.class);
     private final SubscriptionService service;
+    private final ManagementCookie managementCookie;
 
-    public SubscriptionController(SubscriptionService service) {
+    public SubscriptionController(SubscriptionService service, ManagementCookie managementCookie) {
         this.service = service;
+        this.managementCookie = managementCookie;
     }
 
     private static final String RECEIPT = "요청을 접수했습니다. 해당 주소로 메일을 확인해 주세요.";
 
-    private String ip(HttpServletRequest r) {
-        return r.getRemoteAddr();
+    @ExceptionHandler({DataAccessException.class, TransactionException.class})
+    ResponseEntity<Void> databaseUnavailable() {
+        LOG.warn("Subscription database operation failed");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "1").build();
+    }
+
+    private static <T> T transaction(Supplier<T> operation) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return operation.get();
+            } catch (RuntimeException error) {
+                if (attempt == 3 || !serializationFailure(error)) throw error;
+            }
+        }
+    }
+
+    private static boolean serializationFailure(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && "40001".equals(sql.getSQLState())) return true;
+        }
+        return false;
     }
 
     private void common(Model m) {
@@ -79,7 +109,8 @@ public class SubscriptionController {
         if (!SubscriptionService.validEmail(email))
             m.addAttribute("emailError", "올바른 이메일 주소를 입력해 주세요.");
         if (p == null || m.containsAttribute("emailError")) return "subscription/signup";
-        service.send(service.signup(email, p, ip(request)));
+        String ip = RequestIp.read(request);
+        service.send(transaction(() -> service.signup(email, p, ip)));
         m.addAttribute("receipt", RECEIPT);
         return "subscription/signup";
     }
@@ -98,7 +129,8 @@ public class SubscriptionController {
         if (!SubscriptionService.validEmail(email))
             m.addAttribute("emailError", "올바른 이메일 주소를 입력해 주세요.");
         else {
-            service.send(service.renew(email, "MANAGE", ip(r)));
+            String ip = RequestIp.read(r);
+            service.send(transaction(() -> service.renew(email, "MANAGE", ip)));
             m.addAttribute("receipt", RECEIPT);
         }
         return "subscription/request";
@@ -119,9 +151,10 @@ public class SubscriptionController {
             @PathVariable String purpose,
             @PathVariable String token,
             HttpServletRequest r,
+            HttpServletResponse response,
             Model m) {
         if (purpose.equals("confirm")) {
-            var result = service.confirm(token);
+            var result = transaction(() -> service.confirm(token));
             if (result != null) {
                 List<String> subjects = new ArrayList<>();
                 if (result.news()) subjects.add(MailKind.NEWS.subject());
@@ -130,13 +163,15 @@ public class SubscriptionController {
                 return "subscription/confirmed";
             }
         } else {
-            var access = service.openManagement(token);
-            if (access != null) {
-                HttpSession existing = r.getSession(false);
-                if (existing != null) existing.invalidate();
-                HttpSession session = r.getSession(true);
-                session.setMaxInactiveInterval(900);
-                session.setAttribute("subscriberAccess", access);
+            String previous = managementCookie.read(r);
+            String sessionToken = transaction(() -> service.openManagement(token, previous));
+            if (sessionToken != null) {
+                managementCookie.write(response, sessionToken);
+                try {
+                    service.cleanExpiredSessions();
+                } catch (DataAccessException error) {
+                    LOG.warn("Expired management session cleanup failed");
+                }
                 return "redirect:/subscription/settings";
             }
         }
@@ -160,25 +195,18 @@ public class SubscriptionController {
         if (!SubscriptionService.validEmail(email))
             m.addAttribute("emailError", "올바른 이메일 주소를 입력해 주세요.");
         else {
-            service.send(
-                    service.renew(email, purpose.equals("confirm") ? "CONFIRM" : "MANAGE", ip(r)));
+            String ip = RequestIp.read(r);
+            service.send(transaction(() -> service.renew(
+                    email, purpose.equals("confirm") ? "CONFIRM" : "MANAGE", ip)));
             m.addAttribute("receipt", RECEIPT);
         }
         return "subscription/link";
     }
 
-    private SubscriptionService.ManagementSession sessionAccess(HttpServletRequest r) {
-        HttpSession s = r.getSession(false);
-        return s == null
-                ? null
-                : (SubscriptionService.ManagementSession) s.getAttribute("subscriberAccess");
-    }
-
     @GetMapping("/subscription/settings")
     public String settings(HttpServletRequest r, Model m) {
-        var access = sessionAccess(r);
-        if (access == null) return "redirect:/subscription/request-management";
-        var p = service.preferences(access.subscriberId(), access.generation());
+        String sessionToken = managementCookie.read(r);
+        var p = transaction(() -> service.preferences(sessionToken));
         if (p == null) return "redirect:/subscription/request-management";
         common(m);
         m.addAttribute("news", p.news());
@@ -194,24 +222,28 @@ public class SubscriptionController {
             @RequestParam(required = false) List<String> projects,
             HttpServletRequest r,
             Model m) {
-        var access = sessionAccess(r);
-        if (access == null) return "redirect:/subscription/request-management";
+        String sessionToken = managementCookie.read(r);
+        if (sessionToken == null) return "redirect:/subscription/request-management";
         common(m);
         var p = parse(news, technology, projects, m, false);
-        if (p == null) return "subscription/settings";
-        if (!service.save(access.subscriberId(), access.generation(), p))
+        if (p == null) {
+            return transaction(() -> service.preferences(sessionToken)) == null
+                    ? "redirect:/subscription/request-management" : "subscription/settings";
+        }
+        if (!transaction(() -> service.save(sessionToken, p)))
             return "redirect:/subscription/request-management";
         m.addAttribute("saved", true);
         return "subscription/settings";
     }
 
     @PostMapping("/subscription/unsubscribe")
-    public String unsubscribe(HttpServletRequest r) {
-        var access = sessionAccess(r);
-        if (access != null) {
-            service.unsubscribe(access.subscriberId(), access.generation());
-            r.getSession().invalidate();
-        }
+    public String unsubscribe(HttpServletRequest r, HttpServletResponse response) {
+        String sessionToken = managementCookie.read(r);
+        transaction(() -> {
+            service.unsubscribe(sessionToken);
+            return null;
+        });
+        managementCookie.write(response, "");
         return "subscription/unsubscribed";
     }
 }
