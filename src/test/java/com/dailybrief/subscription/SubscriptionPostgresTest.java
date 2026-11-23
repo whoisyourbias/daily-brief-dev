@@ -309,6 +309,10 @@ class SubscriptionPostgresTest {
         }
 
         String sessionHeader = session.getName() + "=" + session.getValue();
+        var anonymous = invoke(lambda, "GET", "/subscription", "2001:db8::1", "192.0.2.1", "", "");
+        assertThat(anonymous.path("statusCode").asInt()).isEqualTo(200);
+        assertThat(anonymous.path("cookies").get(0).asText()).startsWith("__Host-brief-csrf=");
+        assertThat(anonymous.has("multiValueHeaders")).isFalse();
         var page = invoke(lambda, "GET", "/subscription/settings", "2001:db8::1", "192.0.2.1", sessionHeader, "");
         assertThat(page.path("statusCode").asInt()).isEqualTo(200);
         var csrf = Pattern.compile("name=\"_csrf\" value=\"([^\"]+)\"").matcher(page.path("body").asText());
@@ -337,7 +341,7 @@ class SubscriptionPostgresTest {
             String forwarded, String cookie, String body) throws Exception {
         var mapper = new ObjectMapper();
         var event = Map.of("version", "2.0", "rawPath", path, "rawQueryString", "",
-                "cookies", List.of(cookie), "isBase64Encoded", false, "body", body,
+                "cookies", cookie.isEmpty() ? List.of() : List.of(cookie), "isBase64Encoded", false, "body", body,
                 "headers", Map.of("host", "brief.example.com", "x-forwarded-proto", "https",
                         "x-forwarded-for", forwarded, "content-type", "application/x-www-form-urlencoded"),
                 "requestContext", Map.of("stage", "$default", "requestId", "test",

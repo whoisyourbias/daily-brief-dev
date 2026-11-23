@@ -22,7 +22,9 @@
 ## 웹 Lambda 실행 설정
 
 ```sh
-docker build -f Dockerfile.web-lambda -t daily-brief-web-lambda .
+./mvnw clean package dependency:copy-dependencies -DskipTests \
+  -DincludeScope=runtime -DoutputDirectory=target/lambda-libs
+docker build --provenance=false -f Dockerfile.web-lambda -t daily-brief-web-lambda .
 ```
 
 API Gateway HTTP API의 Lambda 프록시 통합은 페이로드 버전 `2.0`으로 설정한다. Lambda 실행 역할에는 해당 Aurora DSQL 클러스터의 `dsql:DbConnect`를 부여하고, 대응하는 DB 역할에는 구독과 세션 테이블을 처리하는 데 필요한 권한을 부여한다. `DAILYBRIEF_DB_URL`에 `jdbc:aws-dsql:postgresql://<endpoint>/postgres?currentSchema=daily_brief`, `DAILYBRIEF_DB_USER`에 DB 역할, `DAILYBRIEF_PUBLIC_BASE_URL`에 사용자에게 공개할 HTTPS 주소를 지정한다. [Aurora DSQL JDBC 커넥터](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/SECTION_program-with-jdbc-connector.html)
