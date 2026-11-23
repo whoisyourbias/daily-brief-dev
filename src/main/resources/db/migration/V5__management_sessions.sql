@@ -5,4 +5,4 @@ CREATE TABLE brief_management_session (
  csrf_token TEXT NOT NULL,
  expires_at TIMESTAMPTZ NOT NULL
 );
-CREATE INDEX brief_management_session_expiry ON brief_management_session (expires_at);
+CREATE INDEX brief_management_session_expiry ON brief_management_session(expires_at);

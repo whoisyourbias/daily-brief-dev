@@ -25,6 +25,6 @@
 docker build -f Dockerfile.web-lambda -t daily-brief-web-lambda .
 ```
 
-API Gateway HTTP API의 Lambda 프록시 통합은 페이로드 버전 `2.0`으로 설정한다. Lambda 실행 역할에는 해당 Aurora DSQL 클러스터의 `dsql:DbConnect`를 부여하고, 대응하는 DB 역할에는 구독과 세션 테이블을 처리하는 데 필요한 권한을 부여한다. `DAILYBRIEF_DB_URL`에 `jdbc:aws-dsql:postgresql://<endpoint>/postgres`, `DAILYBRIEF_DB_USER`에 DB 역할, `DAILYBRIEF_PUBLIC_BASE_URL`에 사용자에게 공개할 HTTPS 주소를 지정한다. [Aurora DSQL JDBC 커넥터](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/SECTION_program-with-jdbc-connector.html)
+API Gateway HTTP API의 Lambda 프록시 통합은 페이로드 버전 `2.0`으로 설정한다. Lambda 실행 역할에는 해당 Aurora DSQL 클러스터의 `dsql:DbConnect`를 부여하고, 대응하는 DB 역할에는 구독과 세션 테이블을 처리하는 데 필요한 권한을 부여한다. `DAILYBRIEF_DB_URL`에 `jdbc:aws-dsql:postgresql://<endpoint>/postgres?currentSchema=daily_brief`, `DAILYBRIEF_DB_USER`에 DB 역할, `DAILYBRIEF_PUBLIC_BASE_URL`에 사용자에게 공개할 HTTPS 주소를 지정한다. [Aurora DSQL JDBC 커넥터](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/SECTION_program-with-jdbc-connector.html)
 
-웹 Lambda가 시작하기 전에 V2 구독 스키마와 V5 세션 스키마를 적용한다. DSQL에서는 한 트랜잭션에 DDL 한 문장을 적용한다. V2의 ID 생성에는 `CACHE 65536`을 명시하고, V5의 만료 인덱스는 `CREATE INDEX ASYNC`로 생성한 후 완료를 확인한다. [DSQL 전환 검증](daily-brief-aws.md#dsql-전환-검증)
+웹 Lambda가 시작하기 전에 [DSQL 초기화 명령](../../README.md#aurora-dsql-스키마-초기화)으로 `daily_brief` 스키마를 적용한다. 초기화 명령은 V5 세션 테이블과 만료 인덱스를 포함한다.
