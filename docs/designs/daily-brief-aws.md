@@ -60,7 +60,7 @@ Spring Batch 메타데이터 V1 적용, 구독 설정 변경과 발송 준비 �
 
 ## 검토 중인 항목
 
-- D8에서 SES 수락 이벤트를 `EventBridge → SQS → Java Lambda`로 처리할지, `EventBridge → Java Lambda`로 전달할지 결정한다. 두 방식 모두 수락 상태만 기록하며 메일을 다시 발송하지 않는다.
+- D8의 SES 수락 이벤트 전달 경로로 `EventBridge → SQS Standard → Java 21 Lambda`를 제안했다. Lambda는 원래 발송 행에 수락만 기록한다. 서울 리전에서 실제 `Email Sent` 이벤트가 메일을 다시 제출하지 않고 원래 발송 ID에 연결되는지 확인한다. 이벤트가 도착하지 않았을 때의 발송 보류와 운영자 알림, 두 DLQ 경로와 재처리도 예약 발송을 켜기 전에 검증한다. [D8 제안 및 승인 전 검증](aws-ses-acceptance.md)
 - 웹 Lambda가 실행 환경을 바꿔도 구독 관리 세션을 유지하고 실제 요청 IP를 신뢰할 수 있는 경로를 확정한다.
 - Fargate 재실행 간격, 실행 시간 제한과 태스크 시도 이력 보존 기한을 정한다.
 
