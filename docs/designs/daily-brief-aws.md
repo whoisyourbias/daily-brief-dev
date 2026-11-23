@@ -9,8 +9,8 @@ flowchart LR
     web --> db[(Aurora DSQL)]
     web -->|확인·관리 메일| ses[Amazon SES]
     primary[EventBridge Scheduler<br/>08:00 KST] --> workflow[Step Functions Standard]
-    check[EventBridge Scheduler<br/>매시 15분 미시작 점검] -->|점검 요청| workflow
-    workflow -. 실행권·미시작 상태 확인 .-> db
+    check[EventBridge Scheduler<br/>매시 15분 배치 상태 점검] -->|점검 요청| workflow
+    workflow -. 실행권과 시도 상태 확인 .-> db
     workflow -->|실행권 확보 후 ecs:runTask.sync| batch[Java 21 Fargate 태스크]
     batch -->|수집·요약| sources[GitHub · Hacker News · GeekNews · OpenAI]
     batch -->|마감 진행·시도 이력·발송 상태| db
@@ -27,7 +27,7 @@ flowchart LR
 | 예약 실행과 복구 | 정규 실행은 매일 08:00 KST다. Step Functions Standard가 Fargate 종료를 추적한다. 이전 태스크의 실제 종료를 확인하고 다음 08:00 전까지 같은 마감의 저장된 진행 지점부터 자동으로 이어간다. |
 | 실행권과 이력 | DSQL은 마감별 실행권과 마지막 완료 단계를 한 행에 두고, 별도 테이블에 태스크 시도와 종료 결과를 남긴다. 조건부 쓰기가 커밋된 태스크만 진행한다. |
 | 재실행 한도 | 최초 1회와 자동 재실행 최대 2회를 합쳐 마감당 3회다. DSQL 이력을 기준으로 세며, 횟수 또는 기한에 도달하면 운영자에게 알린다. |
-| 미시작 마감 | 08:15 KST부터 다음 날 07:15까지 매시 15분에 최근 활성화된 마감을 점검한다. 미시작이 확인될 때만 같은 마감 ID로 실행한다. DB 조회 오류는 미시작으로 처리하지 않는다. |
+| 배치 상태 점검 | 08:15 KST부터 다음 날 07:15까지 매시 15분에 최근 활성화된 마감의 미시작 여부와 미종결 시도를 확인한다. 미시작이 확인되면 같은 마감 ID로 실행한다. 기존 워크플로가 중단된 시도는 조건부 갱신으로 인수하고 ECS 상태를 확인한다. DB 조회 오류는 미시작으로 처리하지 않는다. [Fargate 복구 규칙](aws-fargate-recovery.md) |
 | SES 응답 유실 | 수락 여부가 불명확한 발송은 자동으로 재제출하지 않고 릴리스 배정을 유지한다. SES가 수락하지 않았다고 명확히 응답한 일시 오류는 제한 내에서 다시 시도할 수 있다. 예약 발송을 켜기 전에 실제 SES 수락 증거를 새 제출 없이 원래 발송 ID에 연결하는 검증이 필요하다. |
 
 ## 언어 선택과 코드 재사용
