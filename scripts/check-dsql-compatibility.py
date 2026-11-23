@@ -1,61 +1,9 @@
 """Run SQL compatibility checks against a disposable Aurora DSQL cluster."""
 
 import argparse
-from contextlib import contextmanager
-import os
-from pathlib import Path
-from queue import Empty, Queue
-import subprocess
-from threading import Thread
 from uuid import uuid4
 
-
-@contextmanager
-def session(host, env):
-    with subprocess.Popen(
-        ["psql", "-XqAtw", "-h", host, "-U", "admin", "-d", "postgres"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-    ) as client:
-        output = Queue()
-
-        def read_output():
-            for line in client.stdout:
-                output.put(line.rstrip())
-            output.put(None)
-
-        Thread(target=read_output, daemon=True).start()
-
-        def run(sql, state="00000", timeout=20):
-            client.stdin.write(sql.rstrip(";") + ";\n\\echo sqlstate :SQLSTATE\n")
-            client.stdin.flush()
-            lines = []
-            while True:
-                try:
-                    line = output.get(timeout=timeout)
-                except Empty as error:
-                    raise TimeoutError(f"Timed out waiting for {sql}") from error
-                if line is None:
-                    raise RuntimeError("\n".join(lines))
-                if line.startswith("sqlstate "):
-                    if line != f"sqlstate {state}":
-                        raise RuntimeError(f"{sql}\n{line} (expected {state})\n" + "\n".join(lines))
-                    return lines
-                lines.append(line)
-
-        try:
-            yield run
-        finally:
-            client.terminate()
-
-
-def expect(run, sql, *rows, timeout=20):
-    actual = [line for line in run(sql, timeout=timeout) if not line.startswith("NOTICE:")]
-    if actual != list(rows):
-        raise RuntimeError(f"{sql}\nExpected {rows}, got {actual}")
+from dsql_schema import add_connection_arguments, connect_config, expect, migrate, session
 
 
 def expect_conflict(run):
@@ -64,30 +12,44 @@ def expect_conflict(run):
         raise RuntimeError(f"Expected a data conflict (OC000), got {diagnostics}")
 
 
-def check(host, env):
-    folder = Path(__file__).resolve().parents[1] / "src/main/resources/db/migration"
-    schema = "daily_brief_check_" + uuid4().hex
-    with session(host, env) as a, session(host, env) as b:
-        a(f"CREATE SCHEMA {schema}")
-        a(f"SET search_path TO {schema}")
+def interrupt_after_index_submission(run, schema):
+    class Interruption(Exception):
+        pass
 
-        for path in sorted(folder.glob("V*.sql")):
-            for statement in path.read_text().split(";"):
-                sql = statement.strip()
-                if sql.startswith("CREATE INDEX "):
-                    sql = sql.replace("CREATE INDEX ", "CREATE INDEX ASYNC ", 1)
-                    job_id, = a(sql)
-                    expect(a, f"CALL sys.wait_for_job('{job_id}')", "t", timeout=120)
-                    print(f"PASS: {sql}", flush=True)
-                elif sql:
-                    if "AS IDENTITY PRIMARY KEY" in sql:
-                        a(sql, "0A000")
-                        sql = sql.replace("AS IDENTITY PRIMARY KEY", "AS IDENTITY (CACHE 65536) PRIMARY KEY")
-                    a(sql)
-        expect(a, "INSERT INTO brief_subscriber(email,status) VALUES ('test@example.invalid','ACTIVE') "
-               "RETURNING (id > 0)", "t")
+    def interrupted_run(sql, *args, **kwargs):
+        if sql.startswith("CALL sys.wait_for_job("):
+            raise Interruption()
+        return run(sql, *args, **kwargs)
+
+    try:
+        migrate(interrupted_run, schema)
+    except Interruption:
+        return
+    raise RuntimeError("Expected migration to submit an asynchronous index job")
+
+
+def check(host, env):
+    schema = "daily_brief_check_" + uuid4().hex
+    with session(host, env) as first_attempt:
+        interrupt_after_index_submission(first_attempt, schema)
+
+    with session(host, env) as a, session(host, env) as b:
+        migrate(a, schema)
+        expect(a, "INSERT INTO brief_subscriber(email,status) "
+               "VALUES ('test@example.invalid','ACTIVE'), ('other@example.invalid','ACTIVE') "
+               "RETURNING (id > 0)", "t", "t")
+        migrate(a, schema)
+        expect(a, "SELECT count(DISTINCT id) FROM brief_subscriber", "2")
+        a("DELETE FROM brief_subscriber WHERE email='other@example.invalid'")
         a("INSERT INTO brief_project_selection VALUES (-1,'REACT',now())", "23503")
-        print("PASS: V2–V4 DDL with explicit identity cache and async indexes; orphan rejected", flush=True)
+        a("INSERT INTO brief_news VALUES (now(), 1, 'test', 'test', 'test')", "23503")
+        a("INSERT INTO brief_delivery_release VALUES "
+          "('a593c2cb-faf7-4abd-a811-fb11d179fd17', -1, -1, 'REACT', now())", "23503")
+        expect(a, "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() "
+               "AND indexname IN ('brief_release_published_idx', 'brief_delivery_retry_idx') "
+               "ORDER BY indexname", "brief_delivery_retry_idx", "brief_release_published_idx")
+        print("PASS: V2–V4 resumed after interruption and reapplied, generated IDs preserved, "
+              "foreign keys enforced and both indexes present", flush=True)
 
         a("CREATE TABLE cutoff_claim (id integer PRIMARY KEY, owner integer)")
         a("INSERT INTO cutoff_claim VALUES (1,NULL)")
@@ -128,16 +90,5 @@ def check(host, env):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("cluster", help="disposable DSQL cluster identifier")
-    parser.add_argument("--region", default="ap-northeast-2")
-    parser.add_argument("--ca", default="system", help="root certificate file or 'system' (libpq 17+)")
-    args = parser.parse_args()
-    host = f"{args.cluster}.dsql.{args.region}.on.aws"
-    token = subprocess.check_output(
-        ["aws", "dsql", "generate-db-connect-admin-auth-token", "--region", args.region,
-         "--hostname", host],
-        text=True,
-        timeout=20,
-    ).strip()
-    check(host, dict(os.environ, PGPASSWORD=token, PGSSLMODE="verify-full",
-                     PGSSLROOTCERT=args.ca, PGCONNECT_TIMEOUT="10", PGPORT="5432"))
+    add_connection_arguments(parser)
+    check(*connect_config(parser.parse_args()))
