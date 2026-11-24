@@ -1,0 +1,29 @@
+name: Topic subscription pilot
+on:
+  workflow_dispatch:
+  schedule:
+    # 08:00 KST, November 25 through December 8, 2026.
+    - cron: '0 23 24-30 11 *'
+    - cron: '0 23 1-7 12 *'
+permissions:
+  contents: read
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - id: window
+        run: |
+          day=$(TZ=Asia/Seoul date +%Y%m%d)
+          if [[ "$day" -ge 20261125 && "$day" -le 20261208 || "${{ github.event_name }}" == workflow_dispatch ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.window.outputs.active == 'true'
+        uses: actions/checkout@v4
+      - if: steps.window.outputs.active == 'true'
+        run: python3 scripts/topic_pilot.py
+      - if: steps.window.outputs.active == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: topic-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+          path: pilot-output/
+          retention-days: 30
