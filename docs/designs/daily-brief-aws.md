@@ -61,7 +61,39 @@ python3 -B scripts/check-dsql-compatibility.py "$DSQL_TEST_CLUSTER"
 | 동일 마감의 실행권 경쟁 | 두 세션에서 조건부 갱신이 각각 한 행을 반환했다. 먼저 커밋한 세션의 실행권만 저장됐고, 다른 세션은 `40001 (OC000)`을 받았다. 새 트랜잭션에서 재시도하니 갱신된 행이 없었다. |
 | 중복 SES 수락을 모사한 SQL | 두 세션이 `FOR UPDATE`로 같은 `UNKNOWN` 행을 읽었다. 먼저 커밋한 세션만 `SENT`와 테스트 메시지 ID를 저장했다. 다른 세션은 `40001 (OC000)`을 받았고, 재시도와 이전 소유자의 지연 완료 모두 갱신된 행이 없었다. |
 
-Spring Batch 메타데이터 V1 적용, 구독 설정 변경과 발송 준비 경합, 배치와 이벤트 처리기의 동시 수락 및 실제 SES 이벤트 전달은 후속 통합 검증에 포함한다.
+구독 설정 변경과 발송 준비 경합, 배치와 이벤트 처리기의 동시 수락 및 실제 SES 이벤트 전달은 후속 통합 검증에 포함한다.
+
+### Spring Batch 메타데이터 V1 검증
+
+2026-11-24에 서울 리전의 임시 Aurora DSQL 클러스터에서 Spring Batch 5.2.6의 V1 스키마와 `JobRepository`를 검증했다. 검증 후 클러스터 삭제를 확인했다. [GitHub #5](https://github.com/whoisyourbias/daily-brief-dev/issues/5)
+
+| 검증 항목 | 실측 결과 |
+| --- | --- |
+| DDL 트랜잭션 경계 | DDL 호환성 검사에서 같은 트랜잭션 안의 두 번째 `CREATE TABLE`이 `0A000`으로 거절됐다. 각 DDL을 개별 커밋하자 테이블 6개가 생성됐다. [Aurora DSQL DDL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-ddl.html) |
+| 시퀀스 | 원본 `CREATE SEQUENCE`가 캐시 미지정으로 `0A000`을 반환했다. 시퀀스 3개에 `CACHE 1`을 추가하자 모두 생성됐고, `pg_sequences`에서 캐시 값을 확인했다. [Aurora DSQL CREATE SEQUENCE](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/create-sequence-syntax-support.html) |
+| 외래 키 | Spring Batch의 외래 키 선언 5개를 그대로 적용했다. 각 자식 테이블에서 존재하지 않는 부모를 참조하는 삽입은 모두 `23503`으로 거절됐다. |
+| 트랜잭션 격리 | Spring Batch 저장소의 생성 트랜잭션 기본값인 `SERIALIZABLE`을 DSQL 세션에 설정하자 `0A000`으로 거절됐다. 검증용 `JobRepository`에는 `REPEATABLE_READ`를 지정했다. [Aurora DSQL에서 지원하는 SQL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-supported-sql-features.html) |
+| Job 및 Step 저장·조회 | 테스트 Job과 Step이 `COMPLETED`로 끝났다. 실행 후 새 JDBC 연결을 여는 `JobRepository` 호출로 Job ID와 파라미터, 두 실행 상태, Step 커밋 횟수 1회, Job·Step의 실행 컨텍스트를 다시 읽었다. |
+
+표의 `0A000` 세 건은 별도의 SQL 호환성 검사에서 관찰했다. 아래 Maven 명령으로 DSQL에 맞춘 스키마 적용과 `JobRepository` 저장·조회를 재현할 수 있다.
+
+재현에는 Java 21 이상, `dsql:DbConnectAdmin` 권한으로 인증된 AWS CLI, DSQL 서버 인증서를 검증할 PEM CA 번들이 필요하다. `DSQL_TEST_CLUSTER`에 서울 리전의 임시 클러스터 ID를, `DSQL_TEST_CA`에 CA 번들의 절대 경로를 지정한 뒤 실행한다.
+
+```bash
+(
+  set -e
+  dsql_host="${DSQL_TEST_CLUSTER:?}.dsql.ap-northeast-2.on.aws"
+  DSQL_BATCH_TEST_TOKEN=$(aws dsql generate-db-connect-admin-auth-token \
+    --region ap-northeast-2 --hostname "$dsql_host")
+  DSQL_BATCH_TEST_URL="jdbc:postgresql://$dsql_host/postgres?sslmode=verify-full&sslrootcert=${DSQL_TEST_CA:?}&connectTimeout=10"
+  export DSQL_BATCH_TEST_TOKEN DSQL_BATCH_TEST_URL
+  ./mvnw -Dtest=DsqlBatchMetadataTest test
+)
+```
+
+[통합 테스트](../../src/test/java/com/dailybrief/batch/DsqlBatchMetadataTest.java)는 실행마다 `batch_probe_*` 스키마를 생성한다. PostgreSQL JDBC 드라이버와 AWS CLI에서 발급한 IAM 토큰으로 연결한다. 재현을 마친 뒤 사용한 임시 클러스터를 삭제한다.
+
+운영 배치가 DSQL을 사용하려면 DSQL 초기화 경로에 Batch 메타데이터 DDL을 추가하고, DSQL용 Batch 설정에서 `spring.batch.jdbc.isolation-level-for-create=repeatable-read`를 지정해야 한다. 동일 Job 파라미터로 동시 실행을 시작하는 경우는 운영 배치 전환 시 검증한다.
 
 ## 웹 Lambda 검증
 

@@ -43,7 +43,7 @@ AWS CLI의 DSQL 관리자 연결 권한과 Python 3, `psql`을 준비합니다. 
 python3 -B scripts/dsql_schema.py "$DSQL_CLUSTER" --region ap-northeast-2 --schema daily_brief
 ```
 
-V2~V5의 테이블을 각각 커밋합니다. 구독자 자동 ID에는 `CACHE 65536`을 적용합니다. 세션 만료 인덱스를 포함한 보조 인덱스는 비동기로 생성하며 작업 성공과 카탈로그의 유효 상태를 확인한 뒤 종료합니다. V1 Spring Batch 메타데이터는 PostgreSQL의 Flyway 경로에서 관리합니다. DSQL 접속 세션에서는 초기화한 스키마를 `search_path`에 지정합니다.
+V2~V5의 테이블을 각각 커밋합니다. 구독자 자동 ID에는 `CACHE 65536`을 적용합니다. 세션 만료 인덱스를 포함한 보조 인덱스는 비동기로 생성하며 작업 성공과 카탈로그의 유효 상태를 확인한 뒤 종료합니다. V1 Spring Batch 메타데이터는 PostgreSQL의 Flyway 경로에서 관리합니다. DSQL에서 확인한 V1 호환성 조건과 재현 방법은 [Spring Batch 메타데이터 V1 검증](docs/designs/daily-brief-aws.md#spring-batch-메타데이터-v1-검증)을 참고하세요. DSQL 접속 세션에서는 초기화한 스키마를 `search_path`에 지정합니다.
 
 실행 중 오류나 연결 끊김이 발생하면 원인을 해결하고 같은 클러스터와 스키마로 명령을 다시 실행합니다. 이미 커밋된 테이블과 유효한 인덱스를 재사용하고, 진행 중인 인덱스 작업은 이어서 기다립니다. 비어 있는 전용 스키마나 이 명령으로 이미 초기화를 시작한 스키마에서 실행합니다.
 
