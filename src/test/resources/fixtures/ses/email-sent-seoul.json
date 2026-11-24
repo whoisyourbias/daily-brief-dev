@@ -1,0 +1,26 @@
+{
+  "version": "0",
+  "id": "00000000-0000-4000-8000-000000000000",
+  "detail-type": "Email Sent",
+  "source": "aws.ses",
+  "account": "000000000000",
+  "time": "2026-11-24T01:23:30Z",
+  "region": "ap-northeast-2",
+  "resources": [],
+  "detail": {
+    "eventType": "Send",
+    "send": {},
+    "mail": {
+      "timestamp": "2026-11-24T01:23:30.367Z",
+      "messageId": "example-ses-message-id",
+      "tags": {
+        "delivery_id": [
+          "issue-11-seoul-smoke"
+        ],
+        "ses:configuration-set": [
+          "daily-brief-issue11-example"
+        ]
+      }
+    }
+  }
+}
